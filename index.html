@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เครื่องมือวิเคราะห์บาคาร่าเรียลไทม์ (JavaScript Only)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Import Kanit Font for Thai readability */
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap');
+        
+        /* DARK MODE BASE STYLES */
+        body { 
+            font-family: 'Kanit', sans-serif; 
+            background-color: #1a202c; /* Dark Gray Background (Tailwind bg-gray-900) */
+            color: #e2e8f0; /* Light text color (Tailwind text-gray-200) */
+        }
+
+        /* Custom styles for the Baccarat Road-map (History Display) */
+        .roadmap-cell {
+            /* **ขนาด 32x32px** */
+            width: 32px; 
+            height: 32px;
+            min-width: 32px;
+            min-height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: 700; 
+            color: white;
+            /* **margin 2px** */
+            margin: 2px; 
+            font-size: 0.875rem; /* text-sm equivalent, ใหญ่ขึ้น */
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5); /* Shadow adjusted for dark mode */
+            transition: transform 0.1s ease-out;
+        }
+        
+        /* Adjusted base colors for cells */
+        .P { background-color: #3b82f6; } /* Player - Blue */
+        .B { background-color: #ef4444; } /* Banker - Red */
+        .T { background-color: #10b981; } /* Tie - Green (green-500) */
+
+        /* ----------------------------------------------------------------- */
+        /* NEW: Styles for the large input buttons (B, P, T) */
+        /* ----------------------------------------------------------------- */
+        .input-btn {
+            flex: 1;
+            max-width: 150px;
+            font-weight: 700;
+            color: white;
+            padding: 1rem 0.5rem; /* Larger padding */
+            border-radius: 9999px; /* Pill shape */
+            text-shadow: 0 1px 2px rgba(0,0,0,0.6); /* Darker shadow for dark mode */
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4); /* Light border for pop */
+            cursor: pointer;
+            font-size: 1.125rem; /* text-lg equivalent */
+        }
+
+        .input-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.5), 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        /* Gradient Overrides for Buttons */
+        .input-btn.B {
+            /* Banker: Red/Maroon Gradient */
+            background: linear-gradient(145deg, #f87171, #b91c1c); /* Slightly brighter red for dark mode */
+            border-color: #fca5a5;
+        }
+        .input-btn.P {
+            /* Player: Blue/Darker Blue Gradient */
+            background: linear-gradient(145deg, #60a5fa, #1d4ed8); /* Slightly brighter blue for dark mode */
+            border-color: #93c5fd;
+        }
+        .input-btn.T {
+            /* Tie: Green Gradient */
+            background: linear-gradient(145deg, #34d399, #059669); /* green-400 to green-600 */
+            border-color: #86efac;
+        }
+        /* ----------------------------------------------------------------- */
+
+        /* Hide scrollbar but keep scrolling functionality */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen">
+
+    <!-- *** ADJUSTED max-w-4xl to max-w-6xl for wider layout *** -->
+    <div class="max-w-6xl mx-auto bg-gray-800 shadow-2xl rounded-xl p-6 md:p-8">
+        <h1 class="text-3xl font-bold text-gray-100 text-center mb-2">🎲 เครื่องมือวิเคราะห์บาคาร่าเรียลไทม์ 🚀</h1>
+        <p class="text-center text-sm text-gray-400 mb-6">วิเคราะห์รูปแบบ Chop (ปิงปอง) และ Dragon (มังกร) พร้อมจำกัดความเสี่ยง</p>
+
+        <!-- Payout Odds -->
+        <div class="bg-gray-700 p-3 rounded-lg text-center mb-6 border border-indigo-900">
+            <span class="font-semibold text-indigo-400">อัตราการจ่าย:</span> 
+            <span class="text-sm text-gray-300">Player (1:1), Banker (0.95:1), Tie (8:1)</span>
+        </div>
+
+        <!-- Real-time Analysis Result (Dark Mode Amber) - Adjusted for bigger size -->
+        <div class="bg-amber-900 border-l-4 border-amber-600 p-8 rounded-lg mb-6 shadow-md">
+            <h2 class="text-3xl font-bold text-amber-100 mb-3">💡 แนะนำการเดิมพันรอบถัดไป:</h2>
+            <p id="recommendation-text" class="text-4xl font-extrabold text-amber-50">
+                รอข้อมูล...
+            </p>
+            <p id="analysis-detail" class="text-xl text-amber-300 mt-3"></p>
+        </div>
+        
+        <!-- Current History Display - Adjusted size -->
+        <div class="mb-6">
+            <h2 class="text-xl font-semibold mb-3 text-gray-100">📜 ประวัติผลลัพธ์ทั้งหมด (<span id="total-games">0</span> เกม) - แสดงผล 2 แถว (12 คอลัมน์)</h2>
+            
+            <!-- Outer container for centering the roadmap block -->
+            <div class="flex justify-center mx-auto">
+                <!-- Inner container: fixed 2 rows x 12 columns grid (row-major fill) -->
+                        <div id="roadmap-display" 
+                             class="border border-gray-700 rounded-xl bg-gray-900 hide-scrollbar"
+                             style="display: grid; grid-template-rows: repeat(2, 44px); grid-template-columns: repeat(12, 44px); gap: 8px; height: 120px; width: min(640px, 100%); padding: 12px; overflow-x: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.6);">
+                    <!-- Cells will be rendered here -->
+                </div>
+            </div>
+            
+            <p id="raw-history" class="text-sm text-gray-400 mt-2 break-all"></p>
+        </div>
+
+        <!-- User Input (Buttons) -->
+        <div class="mb-8 p-4 border border-indigo-900 rounded-xl bg-gray-700 shadow-md">
+            <h2 class="text-xl font-semibold mb-4 text-gray-100 text-center">บันทึกผลลัพธ์เกมที่ <span id="game-number">1</span></h2>
+            <div class="flex justify-center space-x-4">
+                <!-- ใช้คลาส input-btn ใหม่เพื่อสไตล์ที่ดูดีขึ้น -->
+                <button onclick="recordResult('P')" class="input-btn P">P (Player)</button>
+                <button onclick="recordResult('T')" class="input-btn T">T (Tie)</button>
+                <button onclick="recordResult('B')" class="input-btn B">B (Banker)</button>
+            </div>
+        </div>
+        
+        <!-- NEW FILE UPLOAD SECTION -->
+        <div class="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-900 shadow-sm">
+            <h2 class="text-xl font-semibold mb-3 text-gray-100">📤 นำเข้าประวัติจากไฟล์ (.txt)</h2>
+            <p class="text-sm text-gray-400 mb-2">รองรับรูปแบบ: B, P, T, B P T, หรือการขึ้นบรรทัดใหม่</p>
+            <input type="file" id="history-file-input" accept=".txt" class="block w-full text-sm text-gray-300
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-full file:border-0
+                file:text-sm file:font-semibold
+                file:bg-indigo-700 file:text-indigo-200
+                hover:file:bg-indigo-800
+            ">
+            <button onclick="uploadHistory()" class="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                อัปโหลดและวิเคราะห์
+            </button>
+            <p id="file-upload-status" class="mt-2 text-sm text-gray-500"></p>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex justify-between items-center border-t border-gray-700 pt-4">
+            <p id="user-info" class="text-xs text-gray-500">UID: Local Storage (Non-shared)</p>
+            <button onclick="showResetModal()" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors">
+                รีเซ็ตประวัติ 🗑️
+            </button>
+        </div>
+    </div>
+
+    <!-- Reset Confirmation Modal -->
+    <div id="reset-modal" class="fixed inset-0 bg-gray-900 bg-opacity-80 hidden items-center justify-center transition-opacity">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-2xl w-full max-w-sm">
+            <h3 class="text-lg font-bold mb-4 text-red-500">⚠️ ยืนยันการรีเซ็ตประวัติ</h3>
+            <p class="mb-6 text-gray-300">คุณแน่ใจหรือไม่ว่าต้องการล้างประวัติการเล่นทั้งหมด? การกระทำนี้ไม่สามารถยกเลิกได้.</p>
+            <div class="flex justify-end space-x-3">
+                <button onclick="hideResetModal()" class="px-4 py-2 bg-gray-700 text-gray-100 rounded-lg hover:bg-gray-600 transition-colors">ยกเลิก</button>
+                <button onclick="resetHistory()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">รีเซ็ตทันที</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const HISTORY_STORAGE_KEY = 'baccarat_history_local';
+        window.currentHistory = [];
+
+        // ---------------------------------------------------------------------
+        // 1. Local Storage Management
+        // ---------------------------------------------------------------------
+
+        /**
+         * Loads history from localStorage. (โหลดประวัติจาก localStorage)
+         */
+        function loadHistoryFromLocal() {
+            try {
+                const storedHistory = localStorage.getItem(HISTORY_STORAGE_KEY);
+                return storedHistory ? JSON.parse(storedHistory) : [];
+            } catch (e) {
+                console.error("Error loading history from localStorage:", e);
+                return [];
+            }
+        }
+
+        /**
+         * Saves history to localStorage. (บันทึกประวัติลงใน localStorage)
+         * @param {string[]} history The current game history array.
+         */
+        function saveHistoryToLocal(history) {
+            try {
+                localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+            } catch (e) {
+                console.error("Error saving history to localStorage:", e);
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. UI and State Management (Updated for 2-row fixed column display)
+        // ---------------------------------------------------------------------
+
+        /**
+         * Renders the history and triggers the analysis. (แสดงประวัติและเริ่มวิเคราะห์)
+         * Renders results in a fixed 2-row layout (columns of height 2).
+         * @param {string[]} history The current game history array.
+         */
+        window.updateUI = function(history) {
+            window.currentHistory = history;
+            const roadmapDisplay = document.getElementById('roadmap-display');
+            roadmapDisplay.innerHTML = '';
+
+            // Show only the latest 24 items (2 rows x 12 columns)
+            const MAX_CELLS = 24;
+            const startIndex = Math.max(0, history.length - MAX_CELLS);
+            const visible = history.slice(startIndex);
+
+            // Render in row-major order: fill first row left-to-right up to 12, then second row
+            visible.forEach((result, idx) => {
+                const cell = document.createElement('div');
+                cell.className = `roadmap-cell ${result}`;
+                cell.textContent = result;
+
+                // row-major mapping: column = (idx % 12) + 1, row = Math.floor(idx / 12) + 1
+                const col = (idx % 12) + 1;
+                const row = Math.floor(idx / 12) + 1;
+                cell.style.gridColumnStart = col;
+                cell.style.gridRowStart = row;
+
+                roadmapDisplay.appendChild(cell);
+            });
+
+            document.getElementById('total-games').textContent = history.length;
+            document.getElementById('game-number').textContent = history.length + 1;
+            document.getElementById('raw-history').textContent = `Raw: ${history.join(', ')}`;
+
+            window.runAnalysis(history);
+        }
+        
+        /**
+         * Records a new result and updates localStorage. (บันทึกผลลัพธ์ใหม่)
+         * @param {string} result The B, P, or T result.
+         */
+        window.recordResult = function(result) {
+            const newHistory = [...window.currentHistory, result];
+            saveHistoryToLocal(newHistory);
+            window.updateUI(newHistory);
+        }
+
+        /**
+         * Clears the entire history in localStorage. (ล้างประวัติทั้งหมด)
+         */
+        window.resetHistory = function() {
+            saveHistoryToLocal([]);
+            window.updateUI([]);
+            window.hideResetModal();
+        }
+
+        // ---------------------------------------------------------------------
+        // 3. File Upload Logic (Updated for flexible format)
+        // ---------------------------------------------------------------------
+
+        /**
+         * Handles the .txt file upload, parses history, and updates the state.
+         * Supports flexible formats like: B,P,T,B P T, B
+         */
+        window.uploadHistory = function() {
+            const fileInput = document.getElementById('history-file-input');
+            const statusDisplay = document.getElementById('file-upload-status');
+            const file = fileInput.files[0];
+
+            statusDisplay.textContent = '';
+            statusDisplay.className = 'mt-2 text-sm';
+
+            if (!file) {
+                statusDisplay.textContent = 'กรุณาเลือกไฟล์ .txt';
+                statusDisplay.classList.add('text-red-500'); /* Use lighter red */
+                return;
+            }
+
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const content = event.target.result;
+                
+                // 1. Replace all non-alphanumeric/non-space characters with a single space (e.g., replace commas, new lines with space)
+                // 2. Split by space/whitespace, filter out empty strings, trim, and convert to uppercase
+                const rawResults = content
+                    .replace(/[^A-Za-z0-9]/g, ' ') // Convert non-letters/numbers to spaces (Handles commas, newlines, etc.)
+                    .split(/\s+/) // Split by one or more whitespace characters
+                    .map(r => r.trim().toUpperCase())
+                    .filter(r => r.length > 0);
+                
+                // 3. Filter only valid B, P, or T results
+                const validResults = rawResults.filter(r => r === 'B' || r === 'P' || r === 'T');
+                
+                if (validResults.length === 0 && rawResults.length > 0) {
+                    statusDisplay.textContent = 'ไฟล์ไม่มีผลลัพธ์ (B, P, T) ที่ถูกต้อง';
+                    statusDisplay.classList.add('text-red-500');
+                    return;
+                } else if (validResults.length === 0) {
+                    statusDisplay.textContent = 'ไฟล์ว่างเปล่า';
+                    statusDisplay.classList.add('text-red-500');
+                    return;
+                }
+
+                // Update state and localStorage
+                saveHistoryToLocal(validResults);
+                window.updateUI(validResults);
+
+                let message = `✅ นำเข้าสำเร็จ! (${validResults.length} เกม)`;
+                if (validResults.length < rawResults.length) {
+                    const rejectedCount = rawResults.length - validResults.length;
+                    message += ` - ${rejectedCount} รายการที่ไม่ถูกต้องถูกละเว้น`;
+                }
+                statusDisplay.textContent = message;
+                statusDisplay.classList.add('text-green-500'); /* Use lighter green */
+
+                // Clear the file input after successful upload
+                fileInput.value = '';
+            };
+
+            reader.onerror = function() {
+                statusDisplay.textContent = 'เกิดข้อผิดพลาดในการอ่านไฟล์';
+                statusDisplay.classList.add('text-red-500');
+            };
+
+            reader.readAsText(file);
+        }
+
+
+        // ---------------------------------------------------------------------
+        // 4. Pattern Analysis Logic (Updated for decisive action)
+        // ---------------------------------------------------------------------
+
+        /**
+         * Core logic: Analyzes the pattern based on the Python rules. (ตรรกะการวิเคราะห์หลัก)
+         * @param {string[]} history The current game history.
+         */
+        window.runAnalysis = function(history) {
+            const { recommendation, detail } = analyzePattern(history);
+
+            document.getElementById('recommendation-text').innerHTML = recommendation;
+            document.getElementById('analysis-detail').textContent = detail;
+        }
+
+        /**
+         * Implements the pattern analysis logic (Enhanced and more responsive version).
+         * @param {string[]} history The game history.
+         * @returns {{recommendation: string, detail: string}}
+         */
+        function analyzePattern(history) {
+            // 1. Filter out T (Tie) results
+            const bpResults = history.filter(r => r === 'B' || r === 'P');
+            
+            // Minimum 3 non-Tie results for responsive Chop check
+            if (bpResults.length < 3) {
+                return {
+                    recommendation: "ไม่เพียงพอ (ต้องการผลลัพธ์ B/P อย่างน้อย 3 ครั้ง)",
+                    detail: `ผลลัพธ์ B/P ล่าสุด: ${bpResults.join(', ')}`
+                };
+            }
+
+            const lastThree = bpResults.slice(-3);
+            const [thirdLast, secondLast, lastResult] = lastThree;
+
+            // Calculate current streak length
+            let currentStreakLength = 0;
+            const lastBp = lastResult;
+            for (let i = bpResults.length - 1; i >= 0; i--) {
+                if (bpResults[i] === lastBp) {
+                    currentStreakLength++;
+                } else {
+                    break;
+                }
+            }
+            
+            const detailText = `ผลลัพธ์ B/P 3 ครั้งล่าสุด: [${thirdLast}, ${secondLast}, ${lastResult}], สตรีคปัจจุบัน: ${currentStreakLength}${lastBp}`;
+            
+            // --- Pattern Check Order: Dragon > Responsive Chop > Double Chop > Follow Two ---
+
+            // Rule 1: Dragon Pattern (มังกร) - Check for Streaks (min 3)
+            if (currentStreakLength >= 3) {
+                const betOn = lastResult === 'B' ? 'Banker' : 'Player';
+                
+                // --- High Risk Limit (6 or more) ---
+                const HIGH_RISK_LIMIT = 6;
+                if (currentStreakLength >= HIGH_RISK_LIMIT) {
+                     // Decisive action for high risk
+                     return {
+                        recommendation: `Dragon (${currentStreakLength}${lastBp}): 🚫 เสี่ยงสูง! (หยุดเดิมพัน หรือ แทงสวน)`,
+                        detail: detailText
+                    };
+                }
+                
+                // Follow Dragon for streaks 3, 4, 5
+                return {
+                    recommendation: `Dragon (${currentStreakLength}${lastBp}): 🚀 แทง ${betOn} ต่อไป`,
+                    detail: detailText
+                };
+            }
+
+            // Rule 2: Responsive Chop Pattern (ปิงปอง 3) - Checks for A, B, A (e.g., P, B, P)
+            // This is triggered only when the current streak is 1 (meaning it just cut).
+            if (currentStreakLength === 1 && thirdLast !== secondLast) {
+                const betOn = lastResult === 'B' ? 'Player' : 'Banker';
+                const nextChop = lastResult === 'B' ? 'P' : 'B';
+
+                return {
+                    recommendation: `Responsive Chop (ปิงปอง 3): ➡️ แทง ${betOn} (เพื่อสานต่อ ${nextChop})`,
+                    detail: detailText
+                };
+            }
+            
+            // Rule 3: Double Chop Pattern (สองตัวตัด - 2x2) - Requires 4 results
+            if (bpResults.length >= 4) {
+                const lastFour = bpResults.slice(-4);
+                // Check for X, X, Y, Y (where X=fourthLast=thirdLast and Y=secondLast=lastResult)
+                // The condition currentStreakLength === 2 means the last two results are the same (Y, Y).
+                // We check if the 3rd and 4th results are the same (X, X) and different from the last two.
+                if (currentStreakLength === 2 && lastFour[0] === lastFour[1] && lastFour[0] !== lastFour[2]) {
+                    const betOn = lastResult === 'B' ? 'Player' : 'Banker';
+                    const nextOpposite = lastResult === 'B' ? 'P' : 'B';
+
+                    return {
+                        recommendation: `Double Chop (สองตัวตัด 2x2): ➡️ แทง ${betOn} (เพื่อสร้าง ${nextOpposite})`,
+                        detail: detailText
+                    };
+                }
+            }
+
+
+            // Rule 4: Follow the Two (Potential Dragon start)
+            // If the streak is 2, and no other pattern was detected, recommend continuing the streak.
+            if (currentStreakLength === 2) {
+                 const betOn = lastResult === 'B' ? 'Banker' : 'Player';
+                 // Removed "ลุ้นมังกร 3" for directness
+                 return {
+                    recommendation: `Follow Two: ➡️ แทง ${betOn} ต่อไป`,
+                    detail: detailText
+                };
+            }
+            
+            // Rule 5: General Break Even (Wait/Flat)
+            // This is the default case. Decisive instruction is to pause.
+            return {
+                recommendation: "ไม่พบรูปแบบ: ⏸️ หยุดเดิมพันชั่วคราว",
+                detail: detailText
+            };
+        }
+
+        // ---------------------------------------------------------------------
+        // 5. Modal Functions and Initialization
+        // ---------------------------------------------------------------------
+        
+        window.showResetModal = function() {
+            document.getElementById('reset-modal').classList.remove('hidden');
+            document.getElementById('reset-modal').classList.add('flex');
+        }
+
+        window.hideResetModal = function() {
+            document.getElementById('reset-modal').classList.add('hidden');
+            document.getElementById('reset-modal').classList.remove('flex');
+        }
+
+        // Load history and initialize UI on page load
+        window.onload = () => {
+             const initialHistory = loadHistoryFromLocal();
+             window.updateUI(initialHistory);
+        };
+
+    </script>
+</body>
+</html>
