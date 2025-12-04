@@ -371,10 +371,10 @@
             // 1. Filter out T (Tie) results
             const bpResults = history.filter(r => r === 'B' || r === 'P');
             
-            // Minimum 3 non-Tie results for responsive Chop check
-            if (bpResults.length < 3) {
+            // Minimum 5 non-Tie results for more stable estimation
+            if (bpResults.length < 5) {
                 return {
-                    recommendation: "ไม่เพียงพอ (ต้องการผลลัพธ์ B/P อย่างน้อย 3 ครั้ง)",
+                    recommendation: "ไม่เพียงพอ (ต้องการผลลัพธ์ B/P อย่างน้อย 5 ครั้ง)",
                     detail: `ผลลัพธ์ B/P ล่าสุด: ${bpResults.join(', ')}`
                 };
             }
@@ -393,7 +393,30 @@
                 }
             }
             
-            const detailText = `ผลลัพธ์ B/P 3 ครั้งล่าสุด: [${thirdLast}, ${secondLast}, ${lastResult}], สตรีคปัจจุบัน: ${currentStreakLength}${lastBp}`;
+            // --- New: Use last 5 results (ผู้ใช้ขอ 5 ครั้งล่าสุด) with light decay
+            const WINDOW = Math.min(bpResults.length, 5); // look-back window (สุดท้าย 5)
+            const decay = 0.12; // decay for weighting recent items
+            let weightSum = 0, bWeight = 0, pWeight = 0;
+            for (let i = 0; i < WINDOW; i++) {
+                const idx = bpResults.length - WINDOW + i; // from older -> newer
+                const age = WINDOW - i - 1; // 0 = most recent
+                const w = Math.exp(-decay * age);
+                weightSum += w;
+                if (bpResults[idx] === 'B') bWeight += w;
+                if (bpResults[idx] === 'P') pWeight += w;
+            }
+            const probB = weightSum > 0 ? bWeight / weightSum : 0.5;
+            const probP = weightSum > 0 ? pWeight / weightSum : 0.5;
+            const rawConfidence = Math.abs(probB - probP);
+
+            // Penalize confidence when many ties exist in overall history
+            const tieCount = history.length - bpResults.length;
+            const tieRate = history.length > 0 ? tieCount / history.length : 0;
+            const tiePenalty = Math.min(0.12, tieRate * 0.3); // cap penalty
+            const confidence = Math.max(0, rawConfidence - tiePenalty);
+
+            const detailText = `ผลลัพธ์ B/P 3 ครั้งล่าสุด: [${thirdLast}, ${secondLast}, ${lastResult}], สตรีคปัจจุบัน: ${currentStreakLength}${lastBp}\n` +
+                `สถิติถ่วงน้ำหนัก(ล่าสุด ${WINDOW}): B ${(probB*100).toFixed(1)}% | P ${(probP*100).toFixed(1)}% | Confidence ${(confidence*100).toFixed(1)}% | TieRate ${(tieRate*100).toFixed(1)}%`;
             
             // --- Pattern Check Order: Dragon > Responsive Chop > Double Chop > Follow Two ---
 
@@ -411,23 +434,40 @@
                     };
                 }
                 
-                // Follow Dragon for streaks 3, 4, 5
-                return {
-                    recommendation: `Dragon (${currentStreakLength}${lastBp}): 🚀 แทง ${betOn} ต่อไป`,
-                    detail: detailText
-                };
+                // Follow Dragon for streaks 3, 4, 5 — require some probabilistic support
+                const recommendedByProb = (lastResult === 'B' ? probB : probP) >= 0.52;
+                if (recommendedByProb || rawConfidence >= 0.25) {
+                    return {
+                        recommendation: `Dragon (${currentStreakLength}${lastBp}): 🚀 แทง ${betOn} ต่อไป`,
+                        detail: detailText
+                    };
+                } else {
+                    return {
+                        recommendation: `Dragon (${currentStreakLength}${lastBp}): ⚠️ สัญญาณอ่อน — หยุดหรือเล่นประคอง`,
+                        detail: detailText
+                    };
+                }
             }
 
             // Rule 2: Responsive Chop Pattern (ปิงปอง 3) - Checks for A, B, A (e.g., P, B, P)
             // This is triggered only when the current streak is 1 (meaning it just cut).
             if (currentStreakLength === 1 && thirdLast !== secondLast) {
+                // Responsive Chop detected A,B,A -> expect A again; compute probabilistic support
                 const betOn = lastResult === 'B' ? 'Player' : 'Banker';
                 const nextChop = lastResult === 'B' ? 'P' : 'B';
+                const support = (nextChop === 'B') ? probB : probP;
 
-                return {
-                    recommendation: `Responsive Chop (ปิงปอง 3): ➡️ แทง ${betOn} (เพื่อสานต่อ ${nextChop})`,
-                    detail: detailText
-                };
+                if (support >= 0.53 || confidence >= 0.12) {
+                    return {
+                        recommendation: `Responsive Chop (ปิงปอง 3): ➡️ แทง ${betOn} (สัญญาณค่อนข้างชัด)` ,
+                        detail: detailText
+                    };
+                } else {
+                    return {
+                        recommendation: `Responsive Chop (ปิงปอง 3): ⚠️ สัญญาณอ่อน — รอข้อมูลเพิ่ม`,
+                        detail: detailText
+                    };
+                }
             }
             
             // Rule 3: Double Chop Pattern (สองตัวตัด - 2x2) - Requires 4 results
@@ -439,11 +479,19 @@
                 if (currentStreakLength === 2 && lastFour[0] === lastFour[1] && lastFour[0] !== lastFour[2]) {
                     const betOn = lastResult === 'B' ? 'Player' : 'Banker';
                     const nextOpposite = lastResult === 'B' ? 'P' : 'B';
-
-                    return {
-                        recommendation: `Double Chop (สองตัวตัด 2x2): ➡️ แทง ${betOn} (เพื่อสร้าง ${nextOpposite})`,
-                        detail: detailText
-                    };
+                    // require mild probabilistic support to act
+                    const support = nextOpposite === 'B' ? probB : probP;
+                    if (support >= 0.52 || confidence >= 0.10) {
+                        return {
+                            recommendation: `Double Chop (สองตัวตัด 2x2): ➡️ แทง ${betOn} (สัญญาณพอใช้)` ,
+                            detail: detailText
+                        };
+                    } else {
+                        return {
+                            recommendation: `Double Chop (สองตัวตัด 2x2): ⚠️ สัญญาณอ่อน — รอ`,
+                            detail: detailText
+                        };
+                    }
                 }
             }
 
@@ -452,17 +500,36 @@
             // If the streak is 2, and no other pattern was detected, recommend continuing the streak.
             if (currentStreakLength === 2) {
                  const betOn = lastResult === 'B' ? 'Banker' : 'Player';
-                 // Removed "ลุ้นมังกร 3" for directness
-                 return {
-                    recommendation: `Follow Two: ➡️ แทง ${betOn} ต่อไป`,
-                    detail: detailText
-                };
+                 // Check probabilistic support before recommending
+                 const support = lastResult === 'B' ? probB : probP;
+                 if (support >= 0.53 || confidence >= 0.12) {
+                     return {
+                        recommendation: `Follow Two: ➡️ แทง ${betOn} ต่อไป`,
+                        detail: detailText
+                     };
+                 } else {
+                     return {
+                        recommendation: `Follow Two: ⚠️ สัญญาณอ่อน — หยุดหรือลดเดิมพัน`,
+                        detail: detailText
+                     };
+                 }
             }
             
             // Rule 5: General Break Even (Wait/Flat)
             // This is the default case. Decisive instruction is to pause.
+            // If none of the rules fires strongly, use probabilistic recommendation if confident
+            const CONFIDENCE_THRESHOLD = 0.16; // ~16% diff
+            if (confidence >= CONFIDENCE_THRESHOLD) {
+                const bet = probB > probP ? 'Banker' : 'Player';
+                const prob = Math.max(probB, probP);
+                return {
+                    recommendation: `สถิติคาดการณ์: ➡️ แทง ${bet} (${(prob*100).toFixed(1)}% ความน่าจะเป็น)` ,
+                    detail: detailText
+                };
+            }
+
             return {
-                recommendation: "ไม่พบรูปแบบ: ⏸️ หยุดเดิมพันชั่วคราว",
+                recommendation: "ไม่พบรูปแบบชัดเจน: ⏸️ หยุดเดิมพันชั่วคราว",
                 detail: detailText
             };
         }
